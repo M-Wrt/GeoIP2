@@ -1,0 +1,35 @@
+#!/bin/bash
+export LC_ALL=C
+DIR=$(cd `dirname $0`;pwd)
+
+X=GeoIP2
+DB=IPv4+IPv6.mmdb
+
+for i in IPv4 IPv6 Blacklist;do
+	curl --connect-timeout 9 --retry 3 --retry-all-errors -LfSso $i -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github.raw" https://api.github.com/repos/${USER}/${REPO}/contents/${i}?ref=main
+done
+
+go build -C $X -o ../ipip2mmdb main.go ip2cidr.go >/dev/null 2>&1
+sed -i "/$DOMAIN/d" Blacklist
+cat IPv4 IPv6 > ip.txt
+sed -i '/nomatch/d' ip.txt
+./ipip2mmdb -s ip.txt -d $DB
+awk '!/^$/&&!/^#/{printf(".%s\n",$0)}' Blacklist > black.list
+
+export GIT_DIR=$X/.git
+export GIT_WORK_TREE=$X
+
+DA="中華民國$(TZ=UTC-8 date +"$(($(date +%Y)-1911))年%m月%d日 %H:%M:%S") 中原標準時間"
+echo "Update GeoIP2 at $DA"
+git config user.name github-actions[bot]
+git config user.email github-actions[bot]@users.noreply.github.com
+git checkout --orphan release-orphan >/dev/null 2>&1
+git rm -rf . >/dev/null 2>&1
+cp -f {$DB,black.list} $X
+git checkout main -- direct.list ip.list
+git add .
+git commit -qm "Updated at $DA"
+git branch -D release >/dev/null 2>&1
+git branch -m release >/dev/null 2>&1
+git push -u origin release -f >/dev/null 2>&1 && echo "Git push successful" || echo "Git push failed"
+exit 0
